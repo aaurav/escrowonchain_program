@@ -1,0 +1,15 @@
+[package]
+name = "escrowonchain_program"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[features]
+no-entrypoint = []
+
+[dependencies]
+borsh = "1.8.0"
+solana-program = "4.1.0"
+solana-system-interface = "3.3.0"
