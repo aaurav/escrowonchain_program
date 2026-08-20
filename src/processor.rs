@@ -1,7 +1,6 @@
 use solana_program::{
-    account_info::{AccountInfo, next_account_info},
+    account_info::{next_account_info, AccountInfo},
     entrypoint::ProgramResult,
-    lamports,
     program::invoke_signed,
     program_error::ProgramError,
     pubkey::Pubkey,
@@ -127,7 +126,7 @@ pub fn process_claim(accounts: &[AccountInfo], program_id: &Pubkey) -> ProgramRe
     let depositor = next_account_info(account_info_iter)?;
     let recipient = next_account_info(account_info_iter)?;
     let escrow_account = next_account_info(account_info_iter)?;
-    let system_program = next_account_info(account_info_iter)?;
+    // let system_program = next_account_info(account_info_iter)?;  no cpi needed here
 
     //1. Check account meta flags
     if !recipient.is_signer {
@@ -152,7 +151,7 @@ pub fn process_claim(accounts: &[AccountInfo], program_id: &Pubkey) -> ProgramRe
     }
     //4.Derivation check
     let seeds = &[b"escrow", depositor.key.as_ref(), recipient.key.as_ref()];
-    let (expected_escrow_pda, bump) = Pubkey::find_program_address(seeds, program_id);
+    let (expected_escrow_pda, _bump) = Pubkey::find_program_address(seeds, program_id);
 
     if &expected_escrow_pda != escrow_account.key {
         return Err(ProgramError::InvalidSeeds);
@@ -174,5 +173,49 @@ pub fn process_claim(accounts: &[AccountInfo], program_id: &Pubkey) -> ProgramRe
     Ok(())
 }
 pub fn process_cancel(accounts: &[AccountInfo], program_id: &Pubkey) -> ProgramResult {
+    let account_info_iter = &mut accounts.iter();
+    let depositor = next_account_info(account_info_iter)?;
+    let recipient = next_account_info(account_info_iter)?;
+    let escrow_account = next_account_info(account_info_iter)?;
+
+    //1. Account meta flags
+    if !depositor.is_signer {
+        return Err(ProgramError::MissingRequiredSignature);
+    }
+    if !depositor.is_writable {
+        return Err(ProgramError::InvalidArgument);
+    }
+    if !escrow_account.is_writable {
+        return Err(ProgramError::InvalidArgument);
+    }
+    //2.Check Ownership
+    if escrow_account.owner != program_id {
+        return Err(ProgramError::InvalidAccountOwner);
+    }
+    let mut stored = EscrowState::try_from_slice(&escrow_account.data.borrow_mut())?;
+
+    //3. Identity/auth
+    if depositor.key != &stored.depositor {
+        return Err(ProgramError::IncorrectAuthority);
+    }
+    //4. Derivation
+    let seeds = &[b"escrow", depositor.key.as_ref(), recipient.key.as_ref()];
+    let (expected_escrow_pda, _bump) = Pubkey::find_program_address(seeds, program_id);
+    if &expected_escrow_pda != escrow_account.key {
+        return Err(ProgramError::InvalidSeeds);
+    }
+    //5. State/business logic check
+    if stored.status != Status::Pending {
+        return Err(ProgramError::InvalidAccountData);
+    }
+    //6. No arithmetic check- refund full amount
+    let amount = stored.amount;
+    **escrow_account.lamports.borrow_mut() -= amount;
+    **depositor.lamports.borrow_mut() += amount;
+
+    //Upadte the status back so that this account can't be claimed/cancled twice
+    stored.status = Status::Cancelled;
+    let mut escrow_data = escrow_account.data.borrow_mut();
+    stored.serialize(&mut &mut escrow_data[..])?;
     Ok(())
 }

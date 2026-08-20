@@ -1,13 +1,15 @@
 [package]
 name = "escrowonchain_program"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "lib"]
 
 [features]
 no-entrypoint = []
+custom-heap = []
+custom-panic = []
 
 [dependencies]
 borsh = "1.8.0"
