@@ -9,8 +9,15 @@ pub struct EscrowState {
     pub status: Status,
 }
 
+impl EscrowState {
+    pub const LEN: usize = std::mem::size_of::<Pubkey>()
+        + std::mem::size_of::<Pubkey>()
+        + std::mem::size_of::<u64>()
+        + std::mem::size_of::<Status>();
+}
+
 #[derive(BorshSerialize, BorshDeserialize, Debug, PartialEq)]
-enum Status {
+pub enum Status {
     Pending,
     Claimed,
     Cancelled,
