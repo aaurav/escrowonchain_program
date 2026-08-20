@@ -123,6 +123,54 @@ pub fn process_initialize(
     Ok(())
 }
 pub fn process_claim(accounts: &[AccountInfo], program_id: &Pubkey) -> ProgramResult {
+    let account_info_iter = &mut accounts.iter();
+    let depositor = next_account_info(account_info_iter)?;
+    let recipient = next_account_info(account_info_iter)?;
+    let escrow_account = next_account_info(account_info_iter)?;
+    let system_program = next_account_info(account_info_iter)?;
+
+    //1. Check account meta flags
+    if !recipient.is_signer {
+        return Err(ProgramError::MissingRequiredSignature);
+    }
+    if !recipient.is_writable {
+        return Err(ProgramError::InvalidArgument);
+    }
+    if !escrow_account.is_writable {
+        return Err(ProgramError::InvalidArgument);
+    }
+
+    //3. Check Ownership: account exists
+    if escrow_account.owner != program_id {
+        return Err(ProgramError::IncorrectProgramId);
+    }
+
+    //2. check Identity of signer
+    let mut stored = EscrowState::try_from_slice(&escrow_account.data.borrow())?;
+    if recipient.key != &stored.recipient {
+        return Err(ProgramError::InvalidArgument);
+    }
+    //4.Derivation check
+    let seeds = &[b"escrow", depositor.key.as_ref(), recipient.key.as_ref()];
+    let (expected_escrow_pda, bump) = Pubkey::find_program_address(seeds, program_id);
+
+    if &expected_escrow_pda != escrow_account.key {
+        return Err(ProgramError::InvalidSeeds);
+    }
+    // 5. State/business logic
+    if stored.status != Status::Pending {
+        return Err(ProgramError::InvalidAccountData);
+    }
+    //6.Arithmetic: N/A — moves the stored `amount` in full, no calculation performed
+
+    let amount = stored.amount;
+    **escrow_account.lamports.borrow_mut() -= amount;
+    **recipient.lamports.borrow_mut() += amount;
+
+    //Update the status so that this account cann't be claimed again
+    stored.status = Status::Claimed;
+    let mut escrow_data = escrow_account.data.borrow_mut();
+    stored.serialize(&mut &mut escrow_data[..])?;
     Ok(())
 }
 pub fn process_cancel(accounts: &[AccountInfo], program_id: &Pubkey) -> ProgramResult {
